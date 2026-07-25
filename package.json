@@ -1,0 +1,23 @@
+{
+  "name": "sb-vue3-docgen-repro",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "storybook": "storybook dev -p 6006 --no-open",
+    "build-storybook": "storybook build",
+    "verify": "node verify.mjs"
+  },
+  "dependencies": {
+    "vue": "^3.5.39"
+  },
+  "devDependencies": {
+    "@storybook/addon-docs": "10.5.4",
+    "@storybook/vue3-vite": "10.5.4",
+    "@vitejs/plugin-vue": "^6.0.7",
+    "@vue/tsconfig": "^0.9.1",
+    "storybook": "10.5.4",
+    "typescript": "~6.0.2",
+    "vite": "^8.1.4"
+  }
+}
