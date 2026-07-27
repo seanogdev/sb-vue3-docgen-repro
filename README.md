@@ -93,6 +93,58 @@ helper collects `var`/`let`/`const`, function and class declarations while delib
 import specifiers — so `_sfc_main` is not found and docgen is never attached. It works in `dev`
 because the SFC is inlined there and `_sfc_main` is a real declaration.
 
+## The gap in defect B's fix
+
+[#35557](https://github.com/storybookjs/storybook/pull/35557) fixes defect B by looking for the shim
+import in the module source:
+
+```ts
+/^import\s+_sfc_main\s+from\s+['"][^'"]+\?vue&type=script(?:&[^'"]*)?['"];?$/m.test(src)
+```
+
+The docgen plugin runs in `post`, so by the time it sees a module, every earlier plugin has had a turn
+at it. Any of them putting so much as a comment ahead of that import defeats a `^`-anchored pattern,
+and the guard fails closed: no error, no warning, just no prop table.
+
+This plugin is the whole reproduction:
+
+```ts
+{
+  name: 'repro:prepend-comment',
+  enforce: 'post',
+  transform: (code, id) => (id.endsWith('.vue') ? { code: `/* anything at all */${code}` } : undefined),
+}
+```
+
+`unplugin-vue-components` is the same thing happening without anyone trying. Its transformer ends with
+`s.prepend(DISABLE_COMMENT)`, a MagicString prepend at position 0 with no newline, so every `.vue`
+module it touches starts:
+
+```js
+/* unplugin-vue-components disabled */import _sfc_main from '/src/CleanButton.vue?vue&type=script&setup=true&lang.ts';
+```
+
+`node verify-post-order.mjs` builds five times to show both, and restores the install afterwards:
+
+```
+$ node verify-post-order.mjs
+
+storybook build, __docgenInfo in the emitted chunk:
+
+                                     CleanButton        ConstExportButton  TypeExportButton
+  #35557, nothing ahead of it        present            present            MISSING
+  #35557, + comment prepended        MISSING            MISSING            MISSING
+  #35557, + unplugin-vue-components  MISSING            MISSING            MISSING
+  #35611, + comment prepended        present            present            MISSING
+  #35611, + unplugin-vue-components  present            present            MISSING
+```
+
+`TypeExportButton` stays missing throughout because of defect A, which is fixed by
+[#35593](https://github.com/storybookjs/storybook/pull/35593), merged but not in 10.5.4.
+
+[#35611](https://github.com/storybookjs/storybook/pull/35611) asks the AST which specifier the name
+was imported from rather than matching the source text, so what other plugins emit stops mattering.
+
 ## Running it
 
 ```sh
@@ -100,7 +152,12 @@ npm install
 node verify.mjs          # both modes
 node verify.mjs dev
 node verify.mjs build
+
+node verify-post-order.mjs   # the #35557 gap, five builds
 ```
+
+`patch-docgen.mjs <stock|pr35557|thispr>` switches the installed guard on its own, if you want to
+poke at a single state by hand. It keeps a `.stock` copy of every file it touches.
 
 To see the 10.4.6 reference, set both `storybook` and `@storybook/vue3-vite` to `10.4.6` in
 `package.json`, reinstall, and re-run.
@@ -112,6 +169,8 @@ src/CleanButton.vue         <script setup lang="ts"> only — control
 src/TypeExportButton.vue    + export type    — triggers defect A
 src/ConstExportButton.vue   + export const   — control showing value exports are fine
 verify.mjs                  scripted dev + build docgen check
+verify-post-order.mjs       five builds showing the gap in defect B's fix
+patch-docgen.mjs            switches the installed docgen guard between states
 ```
 
 Each fixture has one `autodocs`-tagged story. `.storybook/main.ts` selects the engine with
